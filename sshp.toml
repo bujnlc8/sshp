@@ -1,0 +1,33 @@
+# 简单动态代理
+[dynamic_proxy]
+# 本机监听地址, 即本机代理地址
+local_addr = "localhost:50001"
+# 登录远程机器用户名称
+remote_user = "root"
+# 远程机器ip
+remote_ip = "192.168.8.22"
+# 远程机器端口号，默认22
+remote_port = 22
+# ssh 心跳间隔(s) 默认60s
+heart_beat_interval = 60
+
+# 多级动态代理 https://zhuanlan.zhihu.com/p/94624842
+[multi_proxy]
+# 本机监听地址, 即本机代理地址
+local_addr = "localhost:50002"
+# 登录远程机器用户名称
+remote_user = "linghaihui"
+# 远程机器ip
+remote_ip = "49.0.18.0"
+# 远程机器端口号，默认22
+remote_port = 22
+# ssh 心跳间隔(s) 默认60s
+heart_beat_interval = 60
+# 转发机器ip
+forward_ip = "39.0.0.208"
+# 转发机器端口号，默认22
+forward_port = 22
+# 转发机器登录用户
+forward_user="root"
+# 本机转发端口
+local_forward_port=50003

@@ -1,0 +1,23 @@
+[package]
+name = "sshp"
+version = "0.1.0"
+edition = "2021"
+authors = ["bujnlc8 <75124771@qq.com>"]
+description = "A CLI to Support SSH Dynamic Proxy"
+license = "MIT"
+categories = ["command-line-utilities"]
+repository = "https://github.com/bujnlc8/sshp"
+
+[dependencies]
+serde = {version="1.0.136", features=["derive"]}
+toml = "0.5.9"
+anyhow = "1.0.57"
+dirs = "4.0.0"
+clap = {version = "3.1.12"}
+regex = "1.5.5"
+
+[profile.release]
+lto = true
+strip = true
+opt-level = "z"
+codegen-units = 1
