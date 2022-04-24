@@ -1,6 +1,6 @@
 [package]
 name = "sshp"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["bujnlc8 <75124771@qq.com>"]
 description = "A CLI to Support SSH Dynamic Proxy"
