@@ -1,4 +1,5 @@
 use crate::cfg::Config;
+use crate::utils;
 use anyhow::Result;
 use clap::{Arg, ArgMatches, Command};
 
@@ -68,7 +69,7 @@ impl MultiDynamicProxy {
         let forward = forward.as_str();
         let available_port = match config.get_multi_dynamic_local_forward_port() {
             Some(e) => e,
-            None => MultiDynamicProxy::get_avaliable_port() as usize,
+            None => utils::get_avaliable_port() as usize,
         };
         let mut local_forward = std::process::Command::new("ssh")
             .args(vec![
@@ -102,7 +103,11 @@ impl MultiDynamicProxy {
         let status = local_forward.wait()?;
         if let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(2)) {
             if e.contains("failed") || e.contains("Address already in use") || !status.success() {
-                println!("Open multi dynamic proxy failed: \n{}", e.trim());
+                utils::print_with_color(
+                    format!("Open multi dynamic proxy failed: \n{}\n", e.trim()).as_str(),
+                    31,
+                    true,
+                );
                 std::process::exit(1);
             }
         }
@@ -152,14 +157,18 @@ impl MultiDynamicProxy {
             if let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(2)) {
                 if e.contains("failed") || e.contains("Address already in use") || !status.success()
                 {
-                    println!("Open multi dynamic proxy failed: \n{}", e.trim());
+                    utils::print_with_color(
+                        format!("Open multi dynamic proxy failed: \n{}\n", e.trim()).as_str(),
+                        31,
+                        true,
+                    );
                     if !e.contains("Address already in use") {
                         MultiDynamicProxy::stop(addr, forward)?;
                     }
                     std::process::exit(1);
                 }
             }
-            if !MultiDynamicProxy::check_result(MultiDynamicProxy::check(addr), addr) {
+            if !utils::check_result(utils::check(addr), addr) {
                 MultiDynamicProxy::stop(addr, forward)?;
             }
         }
@@ -167,26 +176,20 @@ impl MultiDynamicProxy {
     }
 
     fn stop(addr: &str, forward: &str) -> Result<()> {
-        let mut pids = MultiDynamicProxy::get_pids(addr)?;
-        let pid2 = MultiDynamicProxy::get_pids(forward)?;
+        let mut pids = utils::get_pids(addr)?;
+        let pid2 = utils::get_pids(forward)?;
         pids.extend(pid2);
         for pid in pids.as_slice() {
             #[cfg(target_family = "unix")]
-            MultiDynamicProxy::kill_child_by_pid(pid.to_owned())?;
+            utils::kill_child_by_pid(pid.to_owned())?;
             #[cfg(target_os = "windows")]
-            MultiDynamicProxy::kill_child_by_pid_windows(pid)?;
+            utils::kill_child_by_pid_windows(pid)?;
         }
         if !pids.is_empty() {
-            println!("Stop Success!");
+            utils::print_with_color("Stop Success!\n", 34, false);
         } else {
-            println!("No Process to Kill.")
+            utils::print_with_color("No Process to Kill.\n", 33, false);
         }
         Ok(())
-    }
-
-    fn get_avaliable_port() -> u16 {
-        (20000..65535)
-            .find(|port| std::net::TcpListener::bind(("127.0.0.1", *port)).is_ok())
-            .unwrap_or(50002)
     }
 }

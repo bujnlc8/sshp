@@ -1,4 +1,5 @@
 use crate::cfg::Config;
+use crate::utils;
 use anyhow::Result;
 use clap::{Arg, ArgMatches, Command};
 
@@ -87,31 +88,35 @@ impl DynamicProxy {
         let status = child.wait()?;
         if let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(2)) {
             if e.contains("failed") || e.contains("Address already in use") || !status.success() {
-                println!("Open dynamic proxy failed: \n{}", e.trim());
+                utils::print_with_color(
+                    format!("Open dynamic proxy failed: \n{}\n", e.trim()).as_str(),
+                    31,
+                    true,
+                );
                 if !e.contains("Address already in use") {
                     DynamicProxy::stop(addr)?;
                 }
                 std::process::exit(1);
             }
         }
-        if status.success() && !DynamicProxy::check_result(DynamicProxy::check(addr), addr) {
+        if status.success() && !utils::check_result(utils::check(addr), addr) {
             DynamicProxy::stop(addr)?;
         }
         Ok(())
     }
 
     fn stop(addr: &str) -> Result<()> {
-        let pids = DynamicProxy::get_pids(addr)?;
+        let pids = utils::get_pids(addr)?;
         for pid in pids.as_slice() {
             #[cfg(target_family = "unix")]
-            DynamicProxy::kill_child_by_pid(pid.to_owned())?;
+            utils::kill_child_by_pid(pid.to_owned())?;
             #[cfg(target_os = "windows")]
-            DynamicProxy::kill_child_by_pid_windows(pid)?;
+            utils::kill_child_by_pid_windows(pid)?;
         }
         if !pids.is_empty() {
-            println!("Stop Success!");
+            utils::print_with_color("Stop Success!\n", 34, false);
         } else {
-            println!("No Process to Kill.")
+            utils::print_with_color("No Process to Kill.\n", 33, false);
         }
         Ok(())
     }

@@ -1,5 +1,6 @@
 pub mod cfg;
 pub mod cmds;
+pub mod utils;
 use anyhow::Result;
 use clap::Command;
 use cmds::SubCmd;

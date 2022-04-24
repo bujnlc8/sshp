@@ -1,3 +1,4 @@
+use crate::utils;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -45,7 +46,11 @@ impl Config {
                 .join("sshp.toml"),
         };
         if !config_path.exists() {
-            println!("{} not found", config_path.to_string_lossy());
+            utils::print_with_color(
+                format!("{} not found\n", config_path.to_string_lossy()).as_str(),
+                31,
+                false,
+            );
             std::process::exit(1);
         }
         let config: Config = toml::from_str(std::fs::read_to_string(config_path)?.as_str())?;
@@ -56,7 +61,7 @@ impl Config {
         if let Some(ref e) = self.dynamic_proxy {
             return e;
         }
-        eprintln!("Cannot loads config file");
+        utils::print_with_color("Cannot loads config file\n", 31, true);
         std::process::exit(1);
     }
 
@@ -87,7 +92,7 @@ impl Config {
         if let Some(ref e) = self.multi_proxy {
             return e;
         }
-        eprintln!("Cannot loads config file");
+        utils::print_with_color("Cannot loads config file\n", 31, false);
         std::process::exit(1);
     }
 
