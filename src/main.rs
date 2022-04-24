@@ -8,7 +8,7 @@ use cmds::SubCmd;
 fn main() -> Result<()> {
     let m = Command::new("sshp")
         .about("A CLI to Support SSH Dynamic Proxy.")
-        .version("0.1.0")
+        .version("0.1.1")
         .subcommands(vec![
             cmds::dynamic_proxy::DynamicProxy::usage().display_order(1),
             cmds::multi_proxy::MultiDynamicProxy::usage().display_order(2),
