@@ -1,12 +1,13 @@
+#![allow(clippy::new_without_default)]
 use crate::cfg::Config;
 use crate::utils;
 use anyhow::Result;
 use clap::{Arg, ArgMatches, Command};
 
-use crate::cmds::SubCmd;
+use crate::cmds::{Start, SubCmd};
 use std::io::prelude::*;
 
-pub struct MultiDynamicProxy;
+pub struct MultiDynamicProxy {}
 
 impl SubCmd for MultiDynamicProxy {
     fn usage<'a>() -> Command<'a> {
@@ -29,20 +30,23 @@ impl SubCmd for MultiDynamicProxy {
             )
     }
 
-    fn handler(arg: &ArgMatches) -> Result<()> {
+    fn handler(&self, arg: &ArgMatches) -> Result<()> {
         let config = Config::loads(arg.value_of("config"))?;
-        let addr = config.get_dynamic_local_addr();
-        let forward = MultiDynamicProxy::get_forward_addr(&config);
+        let addr = config.get_multi_dynamic_local_addr();
+        let forward = self.get_forward_addr(&config);
         match arg.value_of("operation").unwrap() {
             "start" => {
-                MultiDynamicProxy::start(&config)?;
+                utils::stop_probe_process(addr)?;
+                self.start_with_probe(&config, addr)?;
             }
             "stop" => {
-                MultiDynamicProxy::stop(addr, forward.as_str())?;
+                utils::stop_probe_process(addr)?;
+                self.stop(addr, forward.as_str(), true)?;
             }
             "restart" => {
-                MultiDynamicProxy::stop(addr, forward.as_str())?;
-                MultiDynamicProxy::start(&config)?;
+                utils::stop_probe_process(addr)?;
+                self.stop(addr, forward.as_str(), true)?;
+                self.start_with_probe(&config, addr)?;
             }
             _ => {}
         }
@@ -50,22 +54,14 @@ impl SubCmd for MultiDynamicProxy {
     }
 }
 
-impl MultiDynamicProxy {
-    fn get_forward_addr(config: &Config) -> String {
-        format!(
-            "{}@{}",
-            config.get_multi_dynamic_forward_user(),
-            config.get_multi_dynamic_forward_ip()
-        )
-    }
-
-    fn start(config: &Config) -> Result<()> {
+impl Start for MultiDynamicProxy {
+    fn start(&self, config: &Config, echo: bool) -> Result<()> {
         let remote = format!(
             "{}:{}",
             config.get_multi_dynamic_remote_ip(),
             config.get_multi_dynamic_remote_port(),
         );
-        let forward = MultiDynamicProxy::get_forward_addr(config);
+        let forward = self.get_forward_addr(config);
         let forward = forward.as_str();
         let available_port = match config.get_multi_dynamic_local_forward_port() {
             Some(e) => e,
@@ -97,18 +93,28 @@ impl MultiDynamicProxy {
             // sleep 0.5s to get all error message
             std::thread::sleep(std::time::Duration::from_millis(500));
             let n = stderr.read(&mut s).unwrap();
-            tx.send(String::from_utf8_lossy(&s[..n]).to_string())
-                .unwrap();
+            if tx
+                .send(String::from_utf8_lossy(&s[..n]).to_string())
+                .is_err()
+            {};
         });
         let status = local_forward.wait()?;
+        let addr = config.get_multi_dynamic_local_addr();
         if let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(2)) {
             if e.contains("failed") || e.contains("Address already in use") || !status.success() {
-                utils::print_with_color(
-                    format!("Open multi dynamic proxy failed: \n{}\n", e.trim()).as_str(),
-                    31,
-                    true,
-                );
-                std::process::exit(1);
+                if echo {
+                    utils::print_with_color(
+                        format!("Open multi dynamic proxy failed: \n{}\n", e.trim()).as_str(),
+                        31,
+                        true,
+                    );
+                } else {
+                    utils::write_log(
+                        &utils::get_log_file(addr),
+                        format!("Open multi dynamic proxy failed: {}", e.trim()).as_str(),
+                    )?;
+                }
+                return Ok(());
             }
         }
         if status.success() {
@@ -121,7 +127,6 @@ impl MultiDynamicProxy {
                     .split(':')
                     .collect::<Vec<&str>>()[0]
             );
-            let addr = config.get_multi_dynamic_local_addr();
             let mut dynamic_proxy = std::process::Command::new("ssh")
                 .args(vec![
                     "-CNf",
@@ -150,32 +155,53 @@ impl MultiDynamicProxy {
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 let mut s = vec![0; 1024 * 10];
                 let n = stderr.read(&mut s).unwrap();
-                tx.send(String::from_utf8_lossy(&s[..n]).to_string())
-                    .unwrap();
+                if tx
+                    .send(String::from_utf8_lossy(&s[..n]).to_string())
+                    .is_err()
+                {}
             });
             let status = dynamic_proxy.wait()?;
             if let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(2)) {
                 if e.contains("failed") || e.contains("Address already in use") || !status.success()
                 {
-                    utils::print_with_color(
-                        format!("Open multi dynamic proxy failed: \n{}\n", e.trim()).as_str(),
-                        31,
-                        true,
-                    );
-                    if !e.contains("Address already in use") {
-                        MultiDynamicProxy::stop(addr, forward)?;
+                    if echo {
+                        utils::print_with_color(
+                            format!("Open multi dynamic proxy failed: \n{}\n", e.trim()).as_str(),
+                            31,
+                            true,
+                        );
+                    } else {
+                        utils::write_log(
+                            &utils::get_log_file(addr),
+                            format!("Open multi dynamic proxy failed: {}", e.trim()).as_str(),
+                        )?;
                     }
-                    std::process::exit(1);
+                    if !e.contains("Address already in use") {
+                        self.stop(addr, forward, echo)?;
+                    }
                 }
             }
-            if !utils::check_result(utils::check(addr), addr) {
-                MultiDynamicProxy::stop(addr, forward)?;
+            if !utils::check_result(utils::check(addr), addr, echo) {
+                self.stop(addr, forward, echo)?;
             }
         }
         Ok(())
     }
+}
 
-    fn stop(addr: &str, forward: &str) -> Result<()> {
+impl MultiDynamicProxy {
+    pub fn new() -> Self {
+        Self {}
+    }
+    fn get_forward_addr(&self, config: &Config) -> String {
+        format!(
+            "{}@{}",
+            config.get_multi_dynamic_forward_user(),
+            config.get_multi_dynamic_forward_ip()
+        )
+    }
+
+    fn stop(&self, addr: &str, forward: &str, echo: bool) -> Result<()> {
         let mut pids = utils::get_pids(addr)?;
         let pid2 = utils::get_pids(forward)?;
         pids.extend(pid2);
@@ -185,10 +211,12 @@ impl MultiDynamicProxy {
             #[cfg(target_os = "windows")]
             utils::kill_child_by_pid_windows(pid)?;
         }
-        if !pids.is_empty() {
-            utils::print_with_color("Stop Success!\n", 34, false);
-        } else {
-            utils::print_with_color("No Process to Kill.\n", 33, false);
+        if echo {
+            if !pids.is_empty() {
+                utils::print_with_color("Stop Success!\n", 34, false);
+            } else {
+                utils::print_with_color("No Process to Kill.\n", 33, false);
+            }
         }
         Ok(())
     }

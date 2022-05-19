@@ -1,12 +1,14 @@
+#![allow(clippy::new_without_default)]
+
 use crate::cfg::Config;
 use crate::utils;
 use anyhow::Result;
 use clap::{Arg, ArgMatches, Command};
 
-use crate::cmds::SubCmd;
+use crate::cmds::{Start, SubCmd};
 use std::io::prelude::*;
 
-pub struct DynamicProxy;
+pub struct DynamicProxy {}
 
 impl SubCmd for DynamicProxy {
     fn usage<'a>() -> Command<'a> {
@@ -29,19 +31,22 @@ impl SubCmd for DynamicProxy {
             )
     }
 
-    fn handler(arg: &ArgMatches) -> Result<()> {
+    fn handler(&self, arg: &ArgMatches) -> Result<()> {
         let config = Config::loads(arg.value_of("config"))?;
         let addr = config.get_dynamic_local_addr();
         match arg.value_of("operation").unwrap() {
             "start" => {
-                DynamicProxy::start(&config, addr)?;
+                utils::stop_probe_process(addr)?;
+                self.start_with_probe(&config, addr)?;
             }
             "stop" => {
-                DynamicProxy::stop(addr)?;
+                utils::stop_probe_process(addr)?;
+                self.stop(addr, true)?;
             }
             "restart" => {
-                DynamicProxy::stop(addr)?;
-                DynamicProxy::start(&config, addr)?;
+                utils::stop_probe_process(addr)?;
+                self.stop(addr, true)?;
+                self.start_with_probe(&config, addr)?;
             }
             _ => {}
         }
@@ -49,13 +54,14 @@ impl SubCmd for DynamicProxy {
     }
 }
 
-impl DynamicProxy {
-    fn start(config: &Config, addr: &str) -> Result<()> {
+impl Start for DynamicProxy {
+    fn start(&self, config: &Config, echo: bool) -> Result<()> {
         let remote = format!(
             "{}@{}",
             config.get_dynamic_remote_user(),
             config.get_dynamic_remote_ip(),
         );
+        let addr = config.get_dynamic_local_addr();
         let mut child = std::process::Command::new("ssh")
             .args(vec![
                 "-CNf",
@@ -82,30 +88,44 @@ impl DynamicProxy {
             // sleep 1s to get all error message
             std::thread::sleep(std::time::Duration::from_millis(1000));
             let n = stderr.read(&mut s).unwrap();
-            tx.send(String::from_utf8_lossy(&s[..n]).to_string())
-                .unwrap();
+            if tx
+                .send(String::from_utf8_lossy(&s[..n]).to_string())
+                .is_err()
+            {}
         });
         let status = child.wait()?;
         if let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(2)) {
             if e.contains("failed") || e.contains("Address already in use") || !status.success() {
-                utils::print_with_color(
-                    format!("Open dynamic proxy failed: \n{}\n", e.trim()).as_str(),
-                    31,
-                    true,
-                );
-                if !e.contains("Address already in use") {
-                    DynamicProxy::stop(addr)?;
+                if echo {
+                    utils::print_with_color(
+                        format!("Open dynamic proxy failed: \n{}\n", e.trim()).as_str(),
+                        31,
+                        true,
+                    );
+                } else {
+                    utils::write_log(
+                        &utils::get_log_file(addr),
+                        format!("Open dynamic proxy failed: {}", e.trim()).as_str(),
+                    )?;
                 }
-                std::process::exit(1);
+                if !e.contains("Address already in use") {
+                    self.stop(addr, echo)?;
+                }
             }
         }
-        if status.success() && !utils::check_result(utils::check(addr), addr) {
-            DynamicProxy::stop(addr)?;
+        if status.success() && !utils::check_result(utils::check(addr), addr, echo) {
+            self.stop(addr, echo)?;
         }
         Ok(())
     }
+}
 
-    fn stop(addr: &str) -> Result<()> {
+impl DynamicProxy {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    fn stop(&self, addr: &str, echo: bool) -> Result<()> {
         let pids = utils::get_pids(addr)?;
         for pid in pids.as_slice() {
             #[cfg(target_family = "unix")]
@@ -113,10 +133,12 @@ impl DynamicProxy {
             #[cfg(target_os = "windows")]
             utils::kill_child_by_pid_windows(pid)?;
         }
-        if !pids.is_empty() {
-            utils::print_with_color("Stop Success!\n", 34, false);
-        } else {
-            utils::print_with_color("No Process to Kill.\n", 33, false);
+        if echo {
+            if !pids.is_empty() {
+                utils::print_with_color("Stop Success!\n", 34, false);
+            } else {
+                utils::print_with_color("No Process to Kill.\n", 33, false);
+            }
         }
         Ok(())
     }

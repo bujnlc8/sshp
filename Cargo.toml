@@ -1,6 +1,6 @@
 [package]
 name = "sshp"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["bujnlc8 <75124771@qq.com>"]
 description = "A CLI to Support SSH Dynamic Proxy"
@@ -15,6 +15,9 @@ anyhow = "1.0.57"
 dirs = "4.0.0"
 clap = {version = "3.1.12"}
 regex = "1.5.5"
+fork = "0.1.19"
+chrono = "0.4.19"
+fs2 = "0.4.3"
 
 [profile.release]
 lto = true

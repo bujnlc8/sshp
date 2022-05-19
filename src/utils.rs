@@ -1,5 +1,21 @@
 use anyhow::Result;
+use fs2::FileExt;
 use regex::Regex;
+use std::fs::OpenOptions;
+use std::io::Write;
+
+pub fn stop_probe_process(addr: &str) -> Result<()> {
+    let probe_id = get_probe_id(addr)?;
+    if probe_id != 0 {
+        if let Err(e) = kill_child_by_pid(probe_id as usize) {
+            write_log(
+                &get_log_file(addr),
+                format!("{}, kill {} error, {}", addr, probe_id, e).as_str(),
+            )?;
+        }
+    }
+    Ok(())
+}
 
 pub fn print_with_color(text: &str, color: u8, hightlight: bool) {
     let mut s = Vec::new();
@@ -31,7 +47,8 @@ pub fn check(addr: &str) -> Result<String> {
     }
 }
 
-pub fn check_result(res: Result<String>, addr: &str) -> bool {
+pub fn check_result(res: Result<String>, addr: &str, echo: bool) -> bool {
+    let log_file = get_log_file(addr);
     match res {
         Ok(e) => {
             if e.is_empty()
@@ -39,36 +56,63 @@ pub fn check_result(res: Result<String>, addr: &str) -> bool {
                     && !e.contains("connection to proxy closed")
                     && !e.contains("curl: ("))
             {
-                print_with_color("Open Dynamic Proxy Success, listen addr is ", 32, false);
-                print_with_color(addr, 37, true);
-                print_with_color(".", 32, true);
-                println!();
+                if echo {
+                    print_with_color("Open Dynamic Proxy Success, listen addr is ", 32, false);
+                    print_with_color(addr, 37, true);
+                    print_with_color(".", 32, true);
+                    println!();
+                } else if write_log(
+                    &log_file,
+                    format!("Open Dynamic Proxy Success, listen addr is {}.", addr).as_str(),
+                )
+                .is_err()
+                {
+                }
                 true
             } else {
-                print_with_color("Listen ", 32, false);
-                print_with_color(addr, 37, true);
-                print_with_color("success, ", 32, false);
-                print_with_color(
-                    "but curl www.baidu.com through the tunnel failed: \n",
-                    31,
-                    true,
-                );
-                print_with_color(e.as_str(), 31, true);
-                println!();
+                if echo {
+                    print_with_color("Listen ", 32, false);
+                    print_with_color(addr, 37, true);
+                    print_with_color("success, ", 32, false);
+                    print_with_color(
+                        "but curl www.baidu.com through the tunnel failed: \n",
+                        31,
+                        true,
+                    );
+                    print_with_color(e.as_str(), 31, true);
+                    println!();
+                } else if write_log(
+                    &log_file,
+                    format!(
+                        "Listen {} success, but curl www.baidu.com through the tunnel failed: {}",
+                        addr, e
+                    )
+                    .as_str(),
+                )
+                .is_err()
+                {
+                }
                 false
             }
         }
         Err(e) => {
-            print_with_color("Listen ", 32, false);
-            print_with_color(addr, 37, true);
-            print_with_color("success, ", 32, false);
-            print_with_color(
-                "but little error happen when check the tunnel by curling www.baidu.com: \n",
-                31,
-                true,
-            );
-            print_with_color(e.to_string().as_str(), 31, true);
-            println!();
+            if echo {
+                print_with_color("Listen ", 32, false);
+                print_with_color(addr, 37, true);
+                print_with_color("success, ", 32, false);
+                print_with_color(
+                    "but little error happen when check the tunnel by curling www.baidu.com: \n",
+                    31,
+                    true,
+                );
+                print_with_color(e.to_string().as_str(), 31, true);
+                println!();
+            } else if write_log(
+                    &log_file,
+                    format!(
+                        "Listen {} success, but little error happen when check the tunnel by curling www.baidu.com:\n{}", addr, e,
+                        ).as_str(),
+                    ).is_err(){}
             true
         }
     }
@@ -125,6 +169,7 @@ pub fn get_child_pid(ppid: usize) -> Result<usize> {
 pub fn kill_child_by_pid(pid: usize) -> Result<()> {
     std::process::Command::new("kill")
         .args(vec!["-9", pid.to_string().as_str()])
+        .stderr(std::process::Stdio::null())
         .status()?;
     Ok(())
 }
@@ -142,6 +187,36 @@ pub fn get_avaliable_port() -> u16 {
     (1025..65535)
         .find(|port| std::net::TcpListener::bind(("127.0.0.1", *port)).is_ok())
         .unwrap_or(50002)
+}
+
+pub fn write_log(addr: &std::path::PathBuf, msg: &str) -> Result<()> {
+    let mut f = OpenOptions::new().create(true).append(true).open(addr)?;
+    f.lock_exclusive()?;
+    let now = chrono::Local::now()
+        .format("%Y-%m-%d %H:%M:%S ")
+        .to_string();
+    let log = now + msg + "\n";
+    f.write_all(log.as_bytes())?;
+    f.unlock()?;
+    Ok(())
+}
+
+pub fn get_pid_file(addr: &str) -> std::path::PathBuf {
+    let pid_file_name = addr.replace(':', "-") + ".pid";
+    std::path::PathBuf::from("/var/run/sshp").join(pid_file_name)
+}
+
+pub fn get_probe_id(addr: &str) -> Result<i32> {
+    let path = get_pid_file(addr);
+    if !path.exists() {
+        return Ok(0);
+    }
+    Ok(std::fs::read_to_string(path)?.parse::<i32>()?)
+}
+
+pub fn get_log_file(addr: &str) -> std::path::PathBuf {
+    let log_file_name = addr.replace(':', "-") + ".log";
+    std::path::PathBuf::from("/var/run/sshp").join(log_file_name)
 }
 
 #[cfg(test)]
