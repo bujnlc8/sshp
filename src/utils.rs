@@ -11,7 +11,7 @@ pub fn stop_probe_process(addr: &str) -> Result<()> {
             write_log(
                 &get_log_file(addr),
                 format!("{}, kill {} error, {}", addr, probe_id, e).as_str(),
-            )?;
+            );
         }
     }
     Ok(())
@@ -33,6 +33,7 @@ pub fn print_with_color(text: &str, color: u8, hightlight: bool) {
 }
 pub fn check(addr: &str) -> Result<String> {
     let child = std::process::Command::new("curl")
+        .arg("--no-progress-meter")
         .arg("--socks5")
         .arg(addr)
         .arg("https://www.baidu.com")
@@ -61,12 +62,11 @@ pub fn check_result(res: Result<String>, addr: &str, echo: bool) -> bool {
                     print_with_color(addr, 37, true);
                     print_with_color(".", 32, true);
                     println!();
-                } else if write_log(
-                    &log_file,
-                    format!("Open Dynamic Proxy Success, listen addr is {}.", addr).as_str(),
-                )
-                .is_err()
-                {
+                } else {
+                    write_log(
+                        &log_file,
+                        format!("Open Dynamic Proxy Success, listen addr is {}.", addr).as_str(),
+                    )
                 }
                 true
             } else {
@@ -81,16 +81,15 @@ pub fn check_result(res: Result<String>, addr: &str, echo: bool) -> bool {
                     );
                     print_with_color(e.as_str(), 31, true);
                     println!();
-                } else if write_log(
-                    &log_file,
-                    format!(
+                } else {
+                    write_log(
+                        &log_file,
+                        format!(
                         "Listen {} success, but curl www.baidu.com through the tunnel failed: {}",
                         addr, e
                     )
-                    .as_str(),
-                )
-                .is_err()
-                {
+                        .as_str(),
+                    )
                 }
                 false
             }
@@ -107,12 +106,13 @@ pub fn check_result(res: Result<String>, addr: &str, echo: bool) -> bool {
                 );
                 print_with_color(e.to_string().as_str(), 31, true);
                 println!();
-            } else if write_log(
+            } else {
+                write_log(
                     &log_file,
                     format!(
                         "Listen {} success, but little error happen when check the tunnel by curling www.baidu.com:\n{}", addr, e,
-                        ).as_str(),
-                    ).is_err(){}
+                        ).as_str())
+            }
             true
         }
     }
@@ -189,16 +189,20 @@ pub fn get_avaliable_port() -> u16 {
         .unwrap_or(50002)
 }
 
-pub fn write_log(addr: &std::path::PathBuf, msg: &str) -> Result<()> {
-    let mut f = OpenOptions::new().create(true).append(true).open(addr)?;
-    f.lock_exclusive()?;
-    let now = chrono::Local::now()
-        .format("%Y-%m-%d %H:%M:%S ")
-        .to_string();
-    let log = now + msg + "\n";
-    f.write_all(log.as_bytes())?;
-    f.unlock()?;
-    Ok(())
+pub fn write_log(addr: &std::path::PathBuf, msg: &str) {
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(addr) {
+        if f.lock_exclusive().is_err() {
+            return;
+        }
+        let now = chrono::Local::now()
+            .format("%Y-%m-%d %H:%M:%S ")
+            .to_string();
+        let log = now + msg + "\n";
+        if f.write_all(log.as_bytes()).is_err() {
+            return;
+        }
+        if f.unlock().is_err() {}
+    }
 }
 
 pub fn get_pid_file(addr: &str) -> std::path::PathBuf {

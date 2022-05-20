@@ -1,3 +1,8 @@
+# 探针进程检查间隔, 单位s
+probe_check_interval = 5
+# 探针进程重启失败尝试最大次数
+probe_failed_times_when_exit = 3600
+
 # 简单动态代理
 [dynamic_proxy]
 # 本机监听地址, 即本机代理地址

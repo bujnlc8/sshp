@@ -96,25 +96,21 @@ impl Start for DynamicProxy {
         let status = child.wait()?;
         if let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(2)) {
             if e.contains("failed") || e.contains("Address already in use") || !status.success() {
-                if echo {
-                    utils::print_with_color(
-                        format!("Open dynamic proxy failed: \n{}\n", e.trim()).as_str(),
-                        31,
-                        true,
-                    );
-                } else {
-                    utils::write_log(
-                        &utils::get_log_file(addr),
-                        format!("Open dynamic proxy failed: {}", e.trim()).as_str(),
-                    )?;
-                }
-                if !e.contains("Address already in use") {
-                    self.stop(addr, echo)?;
-                }
+                self.stop(addr, echo)?;
+                anyhow::bail!("Open dynamic proxy failed: \n{}", e.trim());
             }
         }
-        if status.success() && !utils::check_result(utils::check(addr), addr, echo) {
+        if status.success() {
+            if !utils::check_result(utils::check(addr), addr, echo) {
+                self.stop(addr, echo)?;
+                anyhow::bail!("curl check {} failed.", addr);
+            }
+        } else {
             self.stop(addr, echo)?;
+            anyhow::bail!(
+                "Open dynamic proxy failed, status code is {}",
+                status.to_string()
+            );
         }
         Ok(())
     }

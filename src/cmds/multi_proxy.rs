@@ -100,21 +100,19 @@ impl Start for MultiDynamicProxy {
         });
         let status = local_forward.wait()?;
         let addr = config.get_multi_dynamic_local_addr();
-        if let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(2)) {
-            if e.contains("failed") || e.contains("Address already in use") || !status.success() {
-                if echo {
-                    utils::print_with_color(
-                        format!("Open multi dynamic proxy failed: \n{}\n", e.trim()).as_str(),
-                        31,
-                        true,
-                    );
-                } else {
-                    utils::write_log(
-                        &utils::get_log_file(addr),
-                        format!("Open multi dynamic proxy failed: {}", e.trim()).as_str(),
-                    )?;
+        match rx.recv_timeout(std::time::Duration::from_secs(2)) {
+            Ok(e) => {
+                if e.contains("failed") || e.contains("Address already in use") || !status.success()
+                {
+                    self.stop(addr, forward, echo)?;
+                    anyhow::bail!("Open multi dynamic proxy failed: \n{}", e.trim());
                 }
-                return Ok(());
+            }
+            Err(e) => {
+                if e == std::sync::mpsc::RecvTimeoutError::Disconnected {
+                    self.stop(addr, forward, echo)?;
+                    anyhow::bail!("receive data from thread error happend, {}", e);
+                }
             }
         }
         if status.success() {
@@ -161,29 +159,33 @@ impl Start for MultiDynamicProxy {
                 {}
             });
             let status = dynamic_proxy.wait()?;
-            if let Ok(e) = rx.recv_timeout(std::time::Duration::from_secs(2)) {
-                if e.contains("failed") || e.contains("Address already in use") || !status.success()
-                {
-                    if echo {
-                        utils::print_with_color(
-                            format!("Open multi dynamic proxy failed: \n{}\n", e.trim()).as_str(),
-                            31,
-                            true,
-                        );
-                    } else {
-                        utils::write_log(
-                            &utils::get_log_file(addr),
-                            format!("Open multi dynamic proxy failed: {}", e.trim()).as_str(),
-                        )?;
-                    }
-                    if !e.contains("Address already in use") {
+            match rx.recv_timeout(std::time::Duration::from_secs(2)) {
+                Ok(e) => {
+                    if e.contains("failed")
+                        || e.contains("Address already in use")
+                        || !status.success()
+                    {
                         self.stop(addr, forward, echo)?;
+                        anyhow::bail!("Open multi dynamic proxy failed:\n{}", e.trim());
+                    }
+                }
+                Err(e) => {
+                    if e == std::sync::mpsc::RecvTimeoutError::Disconnected {
+                        self.stop(addr, forward, echo)?;
+                        anyhow::bail!("receive data from thread error happend, {}", e);
                     }
                 }
             }
             if !utils::check_result(utils::check(addr), addr, echo) {
                 self.stop(addr, forward, echo)?;
+                anyhow::bail!("curl check {} failed.", addr);
             }
+        } else {
+            self.stop(addr, forward, echo)?;
+            anyhow::bail!(
+                "Open dynamic proxy failed, status code is {}",
+                status.to_string()
+            );
         }
         Ok(())
     }

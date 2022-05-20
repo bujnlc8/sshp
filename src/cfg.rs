@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
+    probe_check_interval: Option<i32>,
+    probe_failed_times_when_exit: Option<i32>,
     dynamic_proxy: Option<DynamicProxyConfig>,
     multi_proxy: Option<MultiDynamicProxyConfig>,
 }
@@ -138,5 +140,19 @@ impl Config {
 
     pub fn get_multi_dynamic_local_forward_port(&self) -> Option<usize> {
         self.load_multi_dynamic_config().local_forward_port
+    }
+
+    pub fn get_probe_check_interval(&self) -> i32 {
+        if let Some(e) = self.probe_check_interval {
+            return e;
+        }
+        5
+    }
+
+    pub fn get_probe_failed_times_when_exit(&self) -> i32 {
+        if let Some(e) = self.probe_failed_times_when_exit {
+            return e;
+        }
+        3600
     }
 }

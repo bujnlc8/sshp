@@ -21,7 +21,7 @@ pub trait Start {
                 let pid_file_path = utils::get_pid_file(addr);
                 let mut pid_file = std::fs::File::create(pid_file_path)?;
                 pid_file.write_all(child.to_string().as_bytes())?;
-                utils::write_log(&log_path, format!("{} start ...", addr).as_str())?;
+                utils::write_log(&log_path, format!("{} start ...", addr).as_str());
                 self.start(config, true)?;
             }
             Ok(Fork::Child) => {
@@ -32,9 +32,8 @@ pub trait Start {
                         if pids.is_empty() {
                             utils::write_log(
                                 &log_path,
-                                format!("{} start {}th in probe ...", addr, failed_times + 1)
-                                    .as_str(),
-                            )?;
+                                format!("{} start in probe ...", addr).as_str(),
+                            );
                             if let Err(e) = self.start(config, false) {
                                 failed_times += 1;
                                 utils::write_log(
@@ -44,19 +43,30 @@ pub trait Start {
                                         addr, failed_times, e
                                     )
                                     .as_str(),
-                                )?;
-                                if failed_times >= 3600 {
+                                );
+                                if failed_times >= config.get_probe_failed_times_when_exit() {
+                                    utils::write_log(
+                                        &log_path,
+                                        format!(
+                                            "{} failed {} times, probe process will exit.",
+                                            addr, failed_times
+                                        )
+                                        .as_str(),
+                                    );
                                     std::process::exit(1);
                                 }
+                            } else {
+                                failed_times = 0;
                             }
                         }
                     }
-                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    std::thread::sleep(std::time::Duration::from_secs(
+                        config.get_probe_check_interval() as u64,
+                    ));
                 }
             }
             Err(e) => {
-                println!("Fork failed, {}", e);
-                std::process::exit(1);
+                anyhow::bail!("Fork failed, {}", e);
             }
         }
         Ok(())
