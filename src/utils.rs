@@ -75,7 +75,7 @@ pub fn check_result(res: Result<String>, addr: &str, echo: bool) -> bool {
                     print_with_color(addr, 37, true);
                     print_with_color("success, ", 32, false);
                     print_with_color(
-                        "but curl www.baidu.com through the tunnel failed: \n",
+                        "but curl www.baidu.com through the tunnel failed:\n",
                         31,
                         true,
                     );
@@ -85,9 +85,8 @@ pub fn check_result(res: Result<String>, addr: &str, echo: bool) -> bool {
                     write_log(
                         &log_file,
                         format!(
-                        "Listen {} success, but curl www.baidu.com through the tunnel failed: {}",
-                        addr, e
-                    )
+                        "Listen {} success, but curl www.baidu.com through the tunnel failed:\n{}.",
+                        addr, e.trim())
                         .as_str(),
                     )
                 }
@@ -110,7 +109,7 @@ pub fn check_result(res: Result<String>, addr: &str, echo: bool) -> bool {
                 write_log(
                     &log_file,
                     format!(
-                        "Listen {} success, but little error happen when check the tunnel by curling www.baidu.com:\n{}", addr, e,
+                        "Listen {} success, but little error happen when check the tunnel by curling www.baidu.com:\n{}.", addr, e.to_string().trim(),
                         ).as_str())
             }
             true
